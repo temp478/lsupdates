@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Telegram Ticker</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Helvetica, Arial, sans-serif;
+    }
+    .ticker-wrap {
+      width: 100%;
+      background: white;
+      padding: 5px 0;  /* Reduced height */
+      overflow: hidden;
+      border-top: 1px solid #eee;
+      border-bottom: 1px solid #eee;
+    }
+    .ticker {
+      display: inline-block;
+      white-space: nowrap;
+      /* ============= SPEED CONTROL ============= */
+      /* EDIT THIS NUMBER TO CHANGE SPEED: Higher number = slower speed */
+      /* Original speed was 30s. Currently at 36s (20% slower) */
+      /* Try 45s for very slow, 60s for extremely slow */
+      animation: ticker 100s linear infinite; 
+      /* ======================================== */
+      padding: 0;
+    }
+    .ticker:hover {
+      animation-play-state: paused; /* Pause on hover */
+    }
+    .ticker__item {
+      display: inline-block;
+      padding: 0 30px;
+      color: #333;
+      font-weight: normal;
+    }
+    @keyframes ticker {
+      0% { transform: translate3d(100%, 0, 0); }
+      100% { transform: translate3d(-100%, 0, 0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="ticker-wrap">
+    <div class="ticker" id="telegram-ticker">
+      <div class="ticker__item">Loading Tour and Events Updates...</div>
+    </div>
+  </div>
+
+  <script>
+    // Channel configuration - NO API TOKEN NEEDED!
+    const CHANNEL_USERNAME = "sorridianupdates"; 
+    
+    // Flag to track if loading is complete
+    let contentLoaded = false;
+    
+    // Fetch the latest messages from the public Telegram web version
+    async function fetchTelegramPosts() {
+      try {
+        // Reset loading flag
+        contentLoaded = false;
+        
+        // Show loading message while fetching
+        updateTickerWithLoading();
+        
+        // Start a loading animation that continues until content is loaded
+        startLoadingAnimation();
+        
+        // Try multiple CORS proxies in sequence until one works
+        const proxies = [
+          'https://api.allorigins.win/raw?url=',
+          'https://cors-anywhere.herokuapp.com/',
+          'https://corsproxy.io/?'
+        ];
+        
+        const telegramPublicUrl = `https://t.me/s/${CHANNEL_USERNAME}`;
+        
+        // Try each proxy in turn
+        let html = null;
+        let proxyUsed = null;
+        
+        for (const proxy of proxies) {
+          try {
+            console.log(`Trying proxy: ${proxy}`);
+            const finalUrl = proxy.includes('?url=') 
+              ? proxy + encodeURIComponent(telegramPublicUrl)
+              : proxy + telegramPublicUrl;
+              
+            const response = await fetch(finalUrl);
+            
+            if (response.ok) {
+              html = await response.text();
+              proxyUsed = proxy;
+              console.log(`Success with proxy: ${proxy}`);
+              break;
+            }
+          } catch (proxyError) {
+            console.log(`Proxy ${proxy} failed:`, proxyError);
+            // Continue to the next proxy
+          }
+        }
+        
+        if (!html) {
+          throw new Error("All proxies failed");
+        }
+        
+        // Parse the HTML response to extract messages
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        
+        // Extract messages from the Telegram web page
+        // Try different selectors that might match message text
+        const selectors = [
+          '.tgme_widget_message_text', 
+          '.tgme_widget_message_bubble', 
+          '.js-message_text'
+        ];
+        
+        let messageElements = [];
+        
+        for (const selector of selectors) {
+          const elements = doc.querySelectorAll(selector);
+          if (elements && elements.length > 0) {
+            messageElements = elements;
+            console.log(`Found ${elements.length} messages with selector: ${selector}`);
+            break;
+          }
+        }
+        
+        if (messageElements.length > 0) {
+          // Convert the NodeList to an array of message objects
+          const messages = Array.from(messageElements)
+            .map(element => ({
+              text: element.textContent.trim()
+            }))
+            .filter(msg => {
+              // Filter out empty messages
+              if (!msg.text) return false;
+              
+              // Filter out administrative messages
+              const adminMessages = [
+                "channel created",
+                "invited by",
+                "joined the channel",
+                "changed the channel",
+                "changed channel",
+                "pinned a message",
+                "changed the chat photo",
+                "changed the group photo",
+                "the group was renamed",
+                "the channel was renamed",
+                "changed group name",
+                "changed channel name",
+                "added a new admin",
+                "removed an admin",
+                "added admin",
+                "removed admin",
+                "created the group",
+                "created the channel"
+              ];
+              
+              // Check if the message contains any of the admin phrases
+              const lowerCaseText = msg.text.toLowerCase();
+              return !adminMessages.some(phrase => lowerCaseText.includes(phrase.toLowerCase()));
+            });
+          
+          // If we have actual content messages after filtering
+          if (messages.length > 0) {
+            // Wait at least 3 seconds total before showing content
+            const timeElapsed = Date.now() - loadingStartTime;
+            if (timeElapsed < 3000) {
+              await new Promise(resolve => setTimeout(resolve, 3000 - timeElapsed));
+            }
+            
+            // Mark content as loaded and update ticker
+            contentLoaded = true;
+            updateTicker(messages);
+          } else {
+            // If all were admin messages, show static content
+            // But wait at least 3 seconds total first
+            const timeElapsed = Date.now() - loadingStartTime;
+            if (timeElapsed < 3000) {
+              await new Promise(resolve => setTimeout(resolve, 3000 - timeElapsed));
+            }
+            
+            contentLoaded = true;
+            showStaticContent();
+          }
+        } else {
+          console.log("No message elements found in HTML");
+          
+          // Wait at least 3 seconds total before showing fallback
+          const timeElapsed = Date.now() - loadingStartTime;
+          if (timeElapsed < 3000) {
+            await new Promise(resolve => setTimeout(resolve, 3000 - timeElapsed));
+          }
+          
+          contentLoaded = true;
+          showStaticContent();
+        }
+      } catch (error) {
+        console.error("Error fetching Telegram posts:", error);
+        
+        // Wait at least 3 seconds total before showing fallback
+        const timeElapsed = Date.now() - loadingStartTime;
+        if (timeElapsed < 3000) {
+          await new Promise(resolve => setTimeout(resolve, 3000 - timeElapsed));
+        }
+        
+        contentLoaded = true;
+        showStaticContent();
+      }
+    }
+    
+    // Track when loading starts
+    let loadingStartTime = 0;
+    
+    // Start loading animation that continues until content is loaded
+    function startLoadingAnimation() {
+      loadingStartTime = Date.now();
+      
+      // Show loading message while content loads
+      updateTickerWithLoading();
+      
+      // We don't need to create a continuous animation anymore
+      // as we'll guarantee minimum 3 seconds with other logic
+    }
+    
+    // Show loading message
+    function updateTickerWithLoading() {
+      // Only update with loading if content isn't loaded yet
+      if (!contentLoaded) {
+        updateTicker([{ text: "Loading Tour and Events Updates..." }]);
+      }
+    }
+    
+    // Fallback to static content
+    function showStaticContent() {
+      const staticContent = [
+        "Visit our Telegram channel for more updates",
+        "Join us on Telegram: @" + CHANNEL_USERNAME,
+        "Latest news and updates available on our Telegram"
+      ];
+      updateTicker(staticContent.map(text => ({ text })));
+    }
+    
+    function updateTicker(posts) {
+      const ticker = document.getElementById("telegram-ticker");
+      ticker.innerHTML = "";
+      
+      // If no posts, add a default message
+      if (!posts.length) {
+        const defaultItem = document.createElement("div");
+        defaultItem.className = "ticker__item";
+        defaultItem.textContent = "Follow us on Telegram: @" + CHANNEL_USERNAME;
+        ticker.appendChild(defaultItem);
+        return;
+      }
+      
+      // Add each post to the ticker - ensure we duplicate messages for a smooth loop
+      const allMessages = [...posts, ...posts]; // Duplicate messages to ensure continuous loop
+      
+      allMessages.forEach(post => {
+        const item = document.createElement("div");
+        item.className = "ticker__item";
+        
+        // Get text content or default message
+        const text = post.text || "New post on our Telegram channel";
+        // Limit text length to avoid very long messages
+        const truncatedText = text.length > 150 ? text.substring(0, 147) + '...' : text;
+        item.textContent = truncatedText;
+        
+        ticker.appendChild(item);
+      });
+    }
+    
+    // Initial fetch
+    fetchTelegramPosts();
+    
+    // Refresh every 5 minutes
+    setInterval(fetchTelegramPosts, 300000);
+  </script>
+</body>
+</html>
