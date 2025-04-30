@@ -15,15 +15,15 @@
       overflow: hidden;
       border-top: 1px solid #eee;
       border-bottom: 1px solid #eee;
+      position: relative;
     }
     .ticker {
       display: inline-block;
       white-space: nowrap;
       /* ============= SPEED CONTROL ============= */
       /* EDIT THIS NUMBER TO CHANGE SPEED: Higher number = slower speed */
-      /* Original speed was 30s. Currently at 36s (20% slower) */
-      /* Try 45s for very slow, 60s for extremely slow */
-      animation: ticker 150s linear infinite; 
+      /* Original speed was 30s. Currently at 100s */
+      animation: ticker 100s linear infinite; 
       /* ======================================== */
       padding: 0;
     }
@@ -36,15 +36,54 @@
       color: #333;
       font-weight: normal;
     }
+    /* Second ticker for seamless loop */
+    .ticker-clone {
+      display: inline-block;
+      white-space: nowrap;
+      padding: 0;
+      animation: ticker 100s linear infinite;
+      animation-delay: -50s; /* Half the animation duration for perfect overlap */
+    }
+    .ticker-clone:hover {
+      animation-play-state: paused; /* Pause on hover */
+    }
     @keyframes ticker {
       0% { transform: translate3d(100%, 0, 0); }
       100% { transform: translate3d(-100%, 0, 0); }
+    }
+    
+    /* Loading bar styles */
+    .loading-bar-container {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background-color: #f0f0f0;
+      z-index: 10;
+    }
+    .loading-bar {
+      height: 100%;
+      width: 0%;
+      background-color: #1e90ff;
+      transition: width 0.2s;
     }
   </style>
 </head>
 <body>
   <div class="ticker-wrap">
+    <!-- Loading bar -->
+    <div class="loading-bar-container" id="loading-bar-container">
+      <div class="loading-bar" id="loading-bar"></div>
+    </div>
+    
+    <!-- First ticker -->
     <div class="ticker" id="telegram-ticker">
+      <div class="ticker__item">Loading Tour and Events Updates...</div>
+    </div>
+    
+    <!-- Clone ticker for seamless looping -->
+    <div class="ticker-clone" id="telegram-ticker-clone">
       <div class="ticker__item">Loading Tour and Events Updates...</div>
     </div>
   </div>
@@ -76,6 +115,19 @@
         ];
         
         const telegramPublicUrl = `https://t.me/s/${CHANNEL_USERNAME}`;
+        
+        // Show the loading bar container
+        document.getElementById('loading-bar-container').style.display = 'block';
+        let loadingProgress = 0;
+        
+        // Start updating the loading bar
+        const loadingInterval = setInterval(() => {
+          loadingProgress += 2; // Increment progress
+          if (loadingProgress > 90) {
+            loadingProgress = 90; // Cap at 90% until actually loaded
+          }
+          document.getElementById('loading-bar').style.width = loadingProgress + '%';
+        }, 100);
         
         // Try each proxy in turn
         let html = null;
@@ -168,54 +220,79 @@
           
           // If we have actual content messages after filtering
           if (messages.length > 0) {
-            // Wait at least 3 seconds total before showing content
-            const timeElapsed = Date.now() - loadingStartTime;
-            if (timeElapsed < 3000) {
-              await new Promise(resolve => setTimeout(resolve, 3000 - timeElapsed));
-            }
+            // Complete the loading bar
+            document.getElementById('loading-bar').style.width = '100%';
+            
+            // Wait a moment with 100% loading bar
+            await new Promise(resolve => setTimeout(resolve, 500));
             
             // Mark content as loaded and update ticker
             contentLoaded = true;
+            clearInterval(loadingInterval);
+            
+            // Hide the loading bar after a short delay
+            setTimeout(() => {
+              document.getElementById('loading-bar-container').style.display = 'none';
+            }, 500);
+            
             updateTicker(messages);
           } else {
             // If all were admin messages, show static content
-            // But wait at least 3 seconds total first
-            const timeElapsed = Date.now() - loadingStartTime;
-            if (timeElapsed < 3000) {
-              await new Promise(resolve => setTimeout(resolve, 3000 - timeElapsed));
-            }
+            // Complete the loading bar
+            document.getElementById('loading-bar').style.width = '100%';
+            await new Promise(resolve => setTimeout(resolve, 500));
             
             contentLoaded = true;
+            clearInterval(loadingInterval);
+            
+            // Hide the loading bar after a short delay
+            setTimeout(() => {
+              document.getElementById('loading-bar-container').style.display = 'none';
+            }, 500);
+            
             showStaticContent();
           }
         } else {
           console.log("No message elements found in HTML");
           
-          // Wait at least 3 seconds total before showing fallback
-          const timeElapsed = Date.now() - loadingStartTime;
-          if (timeElapsed < 3000) {
-            await new Promise(resolve => setTimeout(resolve, 3000 - timeElapsed));
-          }
+          // Complete the loading bar
+          document.getElementById('loading-bar').style.width = '100%';
+          await new Promise(resolve => setTimeout(resolve, 500));
           
           contentLoaded = true;
+          clearInterval(loadingInterval);
+          
+          // Hide the loading bar after a short delay
+          setTimeout(() => {
+            document.getElementById('loading-bar-container').style.display = 'none';
+          }, 500);
+          
           showStaticContent();
         }
       } catch (error) {
         console.error("Error fetching Telegram posts:", error);
         
-        // Wait at least 3 seconds total before showing fallback
-        const timeElapsed = Date.now() - loadingStartTime;
-        if (timeElapsed < 3000) {
-          await new Promise(resolve => setTimeout(resolve, 3000 - timeElapsed));
-        }
+        // Complete the loading bar
+        document.getElementById('loading-bar').style.width = '100%';
+        await new Promise(resolve => setTimeout(resolve, 500));
         
         contentLoaded = true;
+        
+        // Clear any loading intervals
+        clearInterval(loadingInterval);
+        
+        // Hide the loading bar after a short delay
+        setTimeout(() => {
+          document.getElementById('loading-bar-container').style.display = 'none';
+        }, 500);
+        
         showStaticContent();
       }
     }
     
     // Track when loading starts
     let loadingStartTime = 0;
+    let loadingInterval;
     
     // Start loading animation that continues until content is loaded
     function startLoadingAnimation() {
@@ -224,8 +301,9 @@
       // Show loading message while content loads
       updateTickerWithLoading();
       
-      // We don't need to create a continuous animation anymore
-      // as we'll guarantee minimum 3 seconds with other logic
+      // Reset the loading bar
+      document.getElementById('loading-bar').style.width = '0%';
+      document.getElementById('loading-bar-container').style.display = 'block';
     }
     
     // Show loading message
@@ -238,31 +316,32 @@
     
     // Fallback to static content
     function showStaticContent() {
-      const staticContent = [
-        "Visit our Telegram channel for more updates",
+        const staticContent = [
+          "Visit our Telegram channel for more updates",
         "Join us on Telegram: @" + CHANNEL_USERNAME,
-        "Latest news and updates available on our Telegram"
-      ];
-      updateTicker(staticContent.map(text => ({ text })));
+          "Latest news and updates available on our Telegram"
+        ];
+        updateTicker(staticContent.map(text => ({ text })));
     }
     
     function updateTicker(posts) {
       const ticker = document.getElementById("telegram-ticker");
+      const tickerClone = document.getElementById("telegram-ticker-clone");
       ticker.innerHTML = "";
+      tickerClone.innerHTML = "";
       
       // If no posts, add a default message
       if (!posts.length) {
         const defaultItem = document.createElement("div");
         defaultItem.className = "ticker__item";
         defaultItem.textContent = "Follow us on Telegram: @" + CHANNEL_USERNAME;
-        ticker.appendChild(defaultItem);
+        ticker.appendChild(defaultItem.cloneNode(true));
+        tickerClone.appendChild(defaultItem.cloneNode(true));
         return;
       }
       
-      // Add each post to the ticker - ensure we duplicate messages for a smooth loop
-      const allMessages = [...posts, ...posts]; // Duplicate messages to ensure continuous loop
-      
-      allMessages.forEach(post => {
+      // Add each post to the ticker - no need to duplicate messages now as we have two tickers
+      posts.forEach(post => {
         const item = document.createElement("div");
         item.className = "ticker__item";
         
@@ -272,7 +351,9 @@
         const truncatedText = text.length > 150 ? text.substring(0, 147) + '...' : text;
         item.textContent = truncatedText;
         
-        ticker.appendChild(item);
+        // Add to both tickers to ensure continuous loop
+        ticker.appendChild(item.cloneNode(true));
+        tickerClone.appendChild(item.cloneNode(true));
       });
     }
     
